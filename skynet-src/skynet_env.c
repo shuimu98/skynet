@@ -12,9 +12,9 @@
 struct skynet_env {
 	struct spinlock lock;
 	lua_State *L;
-    uint32_t snowflake_starttime;
-	int32_t snowflake_sequence;
+    int64_t snowflake_starttime;
 	int64_t snowflake_lasttime;
+	int32_t snowflake_sequence;
 };
 
 static struct skynet_env *E = NULL;
@@ -48,6 +48,14 @@ skynet_setenv(const char *key, const char *value) {
 	SPIN_UNLOCK(E)
 }
 
+void
+skynet_env_init() {
+	E = skynet_malloc(sizeof(*E));
+	SPIN_INIT(E)
+	E->L = luaL_newstate();
+}
+
+// snowflake
 static uint64_t
 current_timestamp() {
 	struct timespec ti;
@@ -72,34 +80,43 @@ skynet_snowflake(int machine) {
 	if (curtime < E->snowflake_lasttime) {
         printf("Clock moved backwards. Refusing to generate id.\n");
         uuid = -1;
-    } else if (curtime == E->snowflake_lasttime) {
-		// same millisecond
-		E->snowflake_sequence = (E->snowflake_sequence + 1) & 0xfff;
-		if (E->snowflake_sequence == 0){
-			E->snowflake_lasttime = next_timestamp(E->snowflake_lasttime);
+    } else {
+		if (curtime == E->snowflake_lasttime) {
+			// same millisecond
+			E->snowflake_sequence = (E->snowflake_sequence + 1) & 0x3ff;
+			if (E->snowflake_sequence == 0){
+				E->snowflake_lasttime = next_timestamp(E->snowflake_lasttime);
+			}
+		} else{
+			E->snowflake_sequence = 0;
+			E->snowflake_lasttime = curtime;
 		}
-	} else{
-		E->snowflake_sequence = 0;
-		E->snowflake_lasttime = curtime;
-	}
 
-	uuid = (curtime - E->snowflake_starttime) << 25 | machine << 10 | E->snowflake_sequence;
+		int64_t deltams = curtime - E->snowflake_lasttime;
+		if (deltams >= 0x4000000000){
+			printf("Out of range time difference. Refusing to generate id.\n");
+			uuid = -1;
+		}else{
+			uuid = deltams << 25 | machine << 10 | E->snowflake_sequence;
+		}
+	}
     SPIN_UNLOCK(E)
     return uuid;
 }
 
 void
-skynet_env_init() {
-	E = skynet_malloc(sizeof(*E));
-	SPIN_INIT(E)
-	E->L = luaL_newstate();
-
-	// snowflake 开始时间
+skynet_snowflake_init(){
 	lua_State *L = E->L;
 	lua_getglobal(L, "snowflake_starttime");
-	int64_t result = lua_tointeger(L, -1);
+	int isnum = 0;
+	int64_t result = lua_tointegerx(L, -1, &isnum);
 	lua_pop(L, 1);
-	E->snowflake_starttime = result;
+	if (isnum == 0){
+		// 2024-1-1 00:00:00
+		result = 1704038400;
+	}
+	E->snowflake_starttime = result * 1000;
 	E->snowflake_sequence = 0;
 	E->snowflake_lasttime = 0;
 }
+
