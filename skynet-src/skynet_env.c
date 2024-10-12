@@ -92,7 +92,7 @@ skynet_snowflake(int machine) {
 			E->snowflake_lasttime = curtime;
 		}
 
-		int64_t deltams = curtime - E->snowflake_lasttime;
+		int64_t deltams = curtime - E->snowflake_starttime;
 		if (deltams >= 0x4000000000){
 			printf("Out of range time difference. Refusing to generate id.\n");
 			uuid = -1;
