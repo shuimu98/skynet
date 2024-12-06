@@ -72,6 +72,13 @@ next_timestamp(uint64_t lastTimestamp) {
     return timestamp;
 }
 
+/*
+1bit |  38bit  | 15bit   | 10 bit
+0    | 时间戳  | 节点号  | 序列表
+时间戳 从 2024-1-1 00:00:00 开始，支持8年
+节点号 0-32767
+序列表 0-1023
+*/
 int64_t
 skynet_snowflake(int machine) {
     SPIN_LOCK(E)
